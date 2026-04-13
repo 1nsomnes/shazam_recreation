@@ -112,23 +112,11 @@ def build_constellation_map(
     return constellation
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <spectrogram.npy> [output.npy]")
-        sys.exit(1)
+DEFAULT_OUTPUT_DIR = "constellations"
 
-    input_path = sys.argv[1]
-    output_path = (
-        sys.argv[2]
-        if len(sys.argv) > 2
-        else input_path.replace("_spectrogram.npy", "_constellation.npy")
-    )
 
-    spec = load_spectrogram(input_path)
-    freqs, times, amplitudes = find_local_maxima(spec)
-    accepted_f, accepted_t = apply_density_constraint(freqs, times, amplitudes, spec.shape)
-    constellation = build_constellation_map(accepted_f, accepted_t, spec.shape)
-
+def save_constellation(constellation: np.ndarray, output_path: str) -> None:
+    """Save the binary constellation map to a .npy file."""
     np.save(output_path, constellation)
     size_kb = os.path.getsize(output_path) / 1024
     print(f"Saved constellation map to: {output_path}")
@@ -136,6 +124,29 @@ def main() -> None:
     print(f"  Dtype  : {constellation.dtype}")
     print(f"  Ones   : {int(constellation.sum())}  ({constellation.sum() / constellation.size * 100:.2f}% of pixels)")
     print(f"  Size   : {size_kb:.0f} KB")
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print(f"Usage: python {sys.argv[0]} <spectrogram.npy> [-o output_dir]")
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+
+    output_dir = DEFAULT_OUTPUT_DIR
+    if "-o" in sys.argv:
+        output_dir = sys.argv[sys.argv.index("-o") + 1]
+
+    os.makedirs(output_dir, exist_ok=True)
+    basename = os.path.basename(input_path).replace("_spectrogram.npy", "")
+    output_path = os.path.join(output_dir, f"{basename}_constellation.npy")
+
+    spec = load_spectrogram(input_path)
+    freqs, times, amplitudes = find_local_maxima(spec)
+    accepted_f, accepted_t = apply_density_constraint(freqs, times, amplitudes, spec.shape)
+    constellation = build_constellation_map(accepted_f, accepted_t, spec.shape)
+
+    save_constellation(constellation, output_path)
 
 
 if __name__ == "__main__":

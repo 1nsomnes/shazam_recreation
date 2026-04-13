@@ -98,14 +98,23 @@ def save_spectrogram(magnitude: np.ndarray, output_path: str) -> None:
     print(f"  Size   : {size_mb:.2f} MB")
 
 
+DEFAULT_OUTPUT_DIR = "spectrograms"
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <input.mp3> [output.npy]")
+        print(f"Usage: python {sys.argv[0]} <input.mp3> [-o output_dir]")
         sys.exit(1)
 
     input_path = sys.argv[1]
-    # Default output: same name with .npy extension
-    output_path = sys.argv[2] if len(sys.argv) > 2 else os.path.splitext(input_path)[0] + "_spectrogram.npy"
+
+    output_dir = DEFAULT_OUTPUT_DIR
+    if "-o" in sys.argv:
+        output_dir = sys.argv[sys.argv.index("-o") + 1]
+
+    os.makedirs(output_dir, exist_ok=True)
+    basename = os.path.splitext(os.path.basename(input_path))[0]
+    output_path = os.path.join(output_dir, f"{basename}_spectrogram.npy")
 
     signal = load_audio(input_path)
     magnitude = compute_magnitude_spectrogram(signal)

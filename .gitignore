@@ -1,7 +1,8 @@
 venv
 mayonaise.mp3
-*.npy
-*.png
+spectrograms/
+constellations/
+outputs/
 CLAUDE.md
 .claude/
 

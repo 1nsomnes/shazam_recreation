@@ -70,17 +70,23 @@ def render_spectrogram(magnitude: np.ndarray, output_path: str) -> None:
     print(f"Saved image to: {output_path}  ({size_kb:.0f} KB)")
 
 
+DEFAULT_OUTPUT_DIR = "outputs"
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <spectrogram.npy> [output.png]")
+        print(f"Usage: python {sys.argv[0]} <spectrogram.npy> [-o output_dir]")
         sys.exit(1)
 
     npy_path = sys.argv[1]
-    output_path = (
-        sys.argv[2]
-        if len(sys.argv) > 2
-        else os.path.splitext(npy_path)[0] + ".png"
-    )
+
+    output_dir = DEFAULT_OUTPUT_DIR
+    if "-o" in sys.argv:
+        output_dir = sys.argv[sys.argv.index("-o") + 1]
+
+    os.makedirs(output_dir, exist_ok=True)
+    basename = os.path.splitext(os.path.basename(npy_path))[0]
+    output_path = os.path.join(output_dir, f"{basename}.png")
 
     magnitude = load_spectrogram(npy_path)
     render_spectrogram(magnitude, output_path)
