@@ -2,4 +2,6 @@ venv
 mayonaise.mp3
 *.npy
 *.png
+CLAUDE.md
+.claude/
 
