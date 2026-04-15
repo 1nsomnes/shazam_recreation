@@ -53,8 +53,8 @@ def extract_peaks(constellation: np.ndarray) -> np.ndarray:
 
 def generate_fingerprints(
     peaks: np.ndarray,
-    song_id: int,
-) -> dict[str, list[list[int]]]:
+    song_id: str,
+) -> dict[str, list[list]]:
     """
     Pair each anchor with up to FAN_OUT targets in its forward-looking
     target zone, bit-pack each pair into a 32-bit hash, and collect
@@ -68,7 +68,7 @@ def generate_fingerprints(
     hash_val = (f_anchor << 17) | (f_target << 7) | delta_t
     """
     n_peaks = len(peaks)
-    hashes: dict[str, list[list[int]]] = defaultdict(list)
+    hashes: dict[str, list[list]] = defaultdict(list)
     total_pairs = 0
 
     for i in range(n_peaks):
@@ -101,7 +101,7 @@ def generate_fingerprints(
     return hashes
 
 
-def load_index(index_path: str) -> dict[str, list[list[int]]]:
+def load_index(index_path: str) -> dict[str, list[list]]:
     """Load the existing inverted index from disk, or start fresh."""
     if os.path.isfile(index_path):
         with open(index_path, "r") as f:
@@ -114,8 +114,8 @@ def load_index(index_path: str) -> dict[str, list[list[int]]]:
 
 
 def merge_and_save(
-    index: dict[str, list[list[int]]],
-    new_hashes: dict[str, list[list[int]]],
+    index: dict[str, list[list]],
+    new_hashes: dict[str, list[list]],
     index_path: str,
 ) -> None:
     """Merge new fingerprints into the index and write to disk."""
@@ -135,7 +135,7 @@ def main() -> None:
         sys.exit(1)
 
     npy_path = sys.argv[1]
-    song_id = int(sys.argv[2])
+    song_id = sys.argv[2]
 
     index_path = DEFAULT_INDEX_PATH
     if "-i" in sys.argv:
