@@ -1,5 +1,5 @@
 venv
-mayonaise.mp3
+*.mp3
 spectrograms/
 constellations/
 outputs/
@@ -8,4 +8,5 @@ CLAUDE.md
 .DS_Store
 hashes.json
 songs/
+__pycache__
 
