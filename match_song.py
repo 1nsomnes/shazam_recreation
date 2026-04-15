@@ -7,7 +7,10 @@ to identify which song best matches the input sample.
 
 Matching is based on time-offset histogram voting:
   offset = db_time - sample_time
-Matches are grouped by (song_id, offset) and ranked by group size.
+Matches are grouped by (song_id, offset_bucket) and ranked by group size.
+Offsets are quantized into buckets of OFFSET_TOLERANCE frames so that
+near-misses (due to resampling or encoding differences) still count
+toward the same group.
 """
 
 import sys
@@ -26,6 +29,9 @@ from generate_hashes import (
     FAN_OUT,
     DEFAULT_INDEX_PATH,
 )
+
+# --- Configurable parameters ---
+OFFSET_TOLERANCE = 9  # Bucket width in frames (~0.6 s at hop=512/sr=8000)
 
 
 def generate_hash_pairs(peaks: np.ndarray) -> list[tuple[str, int]]:
@@ -68,11 +74,15 @@ def match_against_index(
     top_n: int = 10,
 ) -> list[tuple[str, int, int]]:
     """
-    Look up each sample hash in the index and vote on (song_id, offset).
+    Look up each sample hash in the index and vote on (song_id, offset_bucket).
 
     offset = db_time - sample_time
+    offset_bucket = offset // OFFSET_TOLERANCE
 
-    Returns the top_n groups as (song_id, offset, count) sorted by
+    Quantizing into buckets lets near-miss offsets reinforce each other
+    instead of fragmenting into separate single-vote groups.
+
+    Returns the top_n groups as (song_id, offset_bucket, count) sorted by
     count descending.
     """
     votes: Counter[tuple[str, int]] = Counter()
@@ -83,14 +93,16 @@ def match_against_index(
             continue
         for song_id, db_time in index[hash_key]:
             offset = db_time - sample_time
-            votes[(song_id, offset)] += 1
+            bucket = offset // OFFSET_TOLERANCE
+            votes[(song_id, bucket)] += 1
             hit_count += 1
 
     print(f"  Hash hits      : {hit_count}")
     print(f"  Unique groups  : {len(votes)}")
 
     top = votes.most_common(top_n)
-    return [(song_id, offset, count) for (song_id, offset), count in top]
+    return [(song_id, bucket * OFFSET_TOLERANCE, count)
+            for (song_id, bucket), count in top]
 
 
 def main() -> None:
