@@ -32,6 +32,7 @@ from generate_hashes import (
 
 # --- Configurable parameters ---
 OFFSET_TOLERANCE = 9  # Bucket width in frames (~0.6 s at hop=512/sr=8000)
+DEFAULT_DEBUG_DIR = "debug"
 
 
 def generate_hash_pairs(peaks: np.ndarray) -> list[tuple[str, int]]:
@@ -72,6 +73,7 @@ def match_against_index(
     pairs: list[tuple[str, int]],
     index: dict[str, list[list]],
     top_n: int = 10,
+    debug_matches: list[dict] | None = None,
 ) -> list[tuple[str, int, int]]:
     """
     Look up each sample hash in the index and vote on (song_id, offset_bucket).
@@ -83,7 +85,8 @@ def match_against_index(
     instead of fragmenting into separate single-vote groups.
 
     Returns the top_n groups as (song_id, offset_bucket, count) sorted by
-    count descending.
+    count descending. If `debug_matches` is provided, every individual
+    (hash, song, sample_time, db_time, offset, bucket) hit is appended.
     """
     votes: Counter[tuple[str, int]] = Counter()
     hit_count = 0
@@ -96,6 +99,15 @@ def match_against_index(
             bucket = offset // OFFSET_TOLERANCE
             votes[(song_id, bucket)] += 1
             hit_count += 1
+            if debug_matches is not None:
+                debug_matches.append({
+                    "hash": hash_key,
+                    "song_id": song_id,
+                    "sample_time": sample_time,
+                    "db_time": db_time,
+                    "offset": offset,
+                    "bucket": int(bucket),
+                })
 
     print(f"  Hash hits      : {hit_count}")
     print(f"  Unique groups  : {len(votes)}")
@@ -107,7 +119,7 @@ def match_against_index(
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <constellation.npy> [-i index.json]")
+        print(f"Usage: python {sys.argv[0]} <constellation.npy> [-i index.json] [--debug [path]]")
         sys.exit(1)
 
     npy_path = sys.argv[1]
@@ -115,6 +127,16 @@ def main() -> None:
     index_path = DEFAULT_INDEX_PATH
     if "-i" in sys.argv:
         index_path = sys.argv[sys.argv.index("-i") + 1]
+
+    debug_path: str | None = None
+    if "--debug" in sys.argv:
+        i = sys.argv.index("--debug")
+        if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-"):
+            debug_path = sys.argv[i + 1]
+        else:
+            os.makedirs(DEFAULT_DEBUG_DIR, exist_ok=True)
+            basename = os.path.basename(npy_path).replace("_constellation.npy", "")
+            debug_path = os.path.join(DEFAULT_DEBUG_DIR, f"{basename}_matches.json")
 
     if not os.path.isfile(index_path):
         print(f"Error: index file not found: {index_path}")
@@ -131,12 +153,31 @@ def main() -> None:
         index = json.load(f)
     print(f"  Index keys     : {len(index)}")
 
-    results = match_against_index(pairs, index)
+    debug_matches: list[dict] | None = [] if debug_path else None
+    results = match_against_index(pairs, index, debug_matches=debug_matches)
 
     print(f"\n{'Rank':<6}{'Song':<25}{'Offset':<10}{'Matches'}")
     print("-" * 50)
     for rank, (song_id, offset, count) in enumerate(results, 1):
         print(f"{rank:<6}{song_id:<25}{offset:<10}{count}")
+
+    if debug_path is not None:
+        os.makedirs(os.path.dirname(debug_path) or ".", exist_ok=True)
+        payload = {
+            "sample": os.path.basename(npy_path),
+            "index": os.path.basename(index_path),
+            "offset_tolerance": OFFSET_TOLERANCE,
+            "sample_peaks": int(peaks.shape[0]),
+            "sample_fingerprints": len(pairs),
+            "total_hits": len(debug_matches),
+            "top_results": [
+                {"song_id": s, "offset": o, "count": c} for s, o, c in results
+            ],
+            "matches": debug_matches,
+        }
+        with open(debug_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"\nDebug matches written to: {debug_path}")
 
 
 if __name__ == "__main__":
