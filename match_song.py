@@ -26,7 +26,11 @@ from generate_hashes import (
     extract_peaks,
     DELTA_T_MIN,
     DELTA_T_MAX,
+    DELTA_F_MAX,
     FAN_OUT,
+    FREQ_QUANT_BITS,
+    F_FIELD_BITS,
+    DT_FIELD_BITS,
     DEFAULT_INDEX_PATH,
 )
 
@@ -42,14 +46,17 @@ def generate_hash_pairs(peaks: np.ndarray) -> list[tuple[str, int]]:
     """
     n_peaks = len(peaks)
     pairs: list[tuple[str, int]] = []
+    f_shift = F_FIELD_BITS + DT_FIELD_BITS
+    t_shift = DT_FIELD_BITS
 
     for i in range(n_peaks):
-        f_anchor = int(peaks[i, 0])
+        f_anchor_raw = int(peaks[i, 0])
+        f_anchor_q = f_anchor_raw >> FREQ_QUANT_BITS
         t_anchor = int(peaks[i, 1])
         fan_count = 0
 
         for j in range(i + 1, n_peaks):
-            f_target = int(peaks[j, 0])
+            f_target_raw = int(peaks[j, 0])
             t_target = int(peaks[j, 1])
             delta_t = t_target - t_anchor
 
@@ -57,8 +64,11 @@ def generate_hash_pairs(peaks: np.ndarray) -> list[tuple[str, int]]:
                 continue
             if delta_t > DELTA_T_MAX:
                 break
+            if abs(f_target_raw - f_anchor_raw) > DELTA_F_MAX:
+                continue
 
-            hash_val = (f_anchor << 17) | (f_target << 7) | delta_t
+            f_target_q = f_target_raw >> FREQ_QUANT_BITS
+            hash_val = (f_anchor_q << f_shift) | (f_target_q << t_shift) | delta_t
             pairs.append((str(hash_val), t_anchor))
             fan_count += 1
 

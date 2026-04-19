@@ -17,7 +17,13 @@ import numpy as np
 # --- Configurable parameters ---
 DELTA_T_MIN = 1       # Minimum time-frame offset for target zone
 DELTA_T_MAX = 127     # Maximum time-frame offset (7 bits)
+DELTA_F_MAX = 64      # Max |f_target - f_anchor| in raw bins (target-box height)
 FAN_OUT = 5           # Max targets per anchor
+FREQ_QUANT_BITS = 2   # Bits shifted off freq bins (bucket size = 2**this)
+
+# Source freq indices are 10 bits (513 bins); quantization trims the low bits.
+F_FIELD_BITS = 10 - FREQ_QUANT_BITS
+DT_FIELD_BITS = 7
 
 DEFAULT_INDEX_PATH = "hashes.json"
 
@@ -60,26 +66,36 @@ def generate_fingerprints(
     target zone, bit-pack each pair into a 32-bit hash, and collect
     (song_id, t_anchor) payloads keyed by hash.
 
-    Hash structure (27 bits of data in a uint32):
-        bits [26:17]  f_anchor   (10 bits, max 1023)
-        bits [16:7]   f_target   (10 bits, max 1023)
-        bits [6:0]    delta_t    (7 bits,  max 127)
+    Frequency bins are right-shifted by FREQ_QUANT_BITS before packing so
+    that small spectral drift between query and reference still collides
+    on the same hash.
 
-    hash_val = (f_anchor << 17) | (f_target << 7) | delta_t
+    Hash structure (with defaults: 8 + 8 + 7 = 23 bits in a uint32):
+        bits [F+DT : DT+1]   f_anchor quantized  (F_FIELD_BITS)
+        bits [DT : 1]        f_target quantized  (F_FIELD_BITS)
+        bits [DT-1 : 0]      delta_t             (DT_FIELD_BITS, max 127)
+
+    hash_val = (f_anchor_q << (F_FIELD_BITS + DT_FIELD_BITS))
+             | (f_target_q << DT_FIELD_BITS)
+             | delta_t
     """
     n_peaks = len(peaks)
     hashes: dict[str, list[list]] = defaultdict(list)
     total_pairs = 0
+    f_shift = F_FIELD_BITS + DT_FIELD_BITS
+    t_shift = DT_FIELD_BITS
 
     for i in range(n_peaks):
-        f_anchor = int(peaks[i, 0])
+        f_anchor_raw = int(peaks[i, 0])
+        f_anchor_q = f_anchor_raw >> FREQ_QUANT_BITS
         t_anchor = int(peaks[i, 1])
         fan_count = 0
 
-        # Scan forward for targets — peaks are sorted by time so we walk
-        # sequentially until we leave the target zone or exhaust fan-out.
+        # Target zone is a bounding box: delta_t in [MIN, MAX] AND
+        # |delta_f| <= DELTA_F_MAX. Peaks are time-sorted, so we can break
+        # on delta_t overflow but must `continue` on freq-band misses.
         for j in range(i + 1, n_peaks):
-            f_target = int(peaks[j, 0])
+            f_target_raw = int(peaks[j, 0])
             t_target = int(peaks[j, 1])
             delta_t = t_target - t_anchor
 
@@ -87,8 +103,11 @@ def generate_fingerprints(
                 continue
             if delta_t > DELTA_T_MAX:
                 break
+            if abs(f_target_raw - f_anchor_raw) > DELTA_F_MAX:
+                continue
 
-            hash_val = (f_anchor << 17) | (f_target << 7) | delta_t
+            f_target_q = f_target_raw >> FREQ_QUANT_BITS
+            hash_val = (f_anchor_q << f_shift) | (f_target_q << t_shift) | delta_t
             hashes[str(hash_val)].append([song_id, t_anchor])
             fan_count += 1
             total_pairs += 1
